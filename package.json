@@ -19,6 +19,7 @@
     "test": "jest"
   },
   "dependencies": {
+    "@now/node": "^1.5.1",
     "@now/node-bridge": "^1.2.6",
     "execa": "^4.0.0",
     "fs-extra": "9.0.0",

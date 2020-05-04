@@ -8,6 +8,7 @@ const FileBlob = require('@now/build-utils/file-blob.js');
 const FileFsRef = require('@now/build-utils/file-fs-ref.js');
 const glob = require('@now/build-utils/fs/glob.js');
 const { runNpmInstall } = require('@now/build-utils/fs/run-user-scripts.js');
+const { makeAwsLauncher, makeNowLauncher } = require('@now/node/dist/launcher');
 const nodeBridge = require('@now/node-bridge');
 
 const fs = require('fs-extra');
@@ -18,8 +19,26 @@ const fetch = require('node-fetch');
 
 const parseConfigFile = require('./parse-config-file');
 
+const LAUNCHER_FILENAME = '___now_launcher';
+const BRIDGE_FILENAME = '___now_bridge';
+const HELPERS_FILENAME = '___now_helpers';
+
 const javaVersion = '8.242.07.1';
 const javaUrl = `https://corretto.aws/downloads/resources/${javaVersion}/amazon-corretto-${javaVersion}-linux-x64.tar.gz`;
+
+function getAWSLambdaHandler(entrypoint, config) {
+  if (config.awsLambdaHandler) {
+    return config.awsLambdaHandler;
+  }
+
+  if (process.env.NODEJS_AWS_HANDLER_NAME) {
+    const { dir, name } = path.parse(entrypoint);
+    const handlerName = process.env.NODEJS_AWS_HANDLER_NAME;
+    return `${dir}${dir ? path.sep : ''}${name}.${handlerName}`;
+  }
+
+  return '';
+}
 
 async function installJava({ meta }) {
   if (meta.isDev) {
@@ -65,31 +84,46 @@ async function downloadFiles({ files, entrypoint, workPath, meta }) {
   return { files: downloadedFiles, entryPath };
 }
 
-async function createLambdaForNode(buildConfig, lambdas, workPath) {
+async function createLambdaForNode({ buildConfig, lambdas, workPath, config }) {
   console.log(`Creating lambda for ${buildConfig.name} (${buildConfig.target})`);
 
-  const launcherPath = path.join(__dirname, 'launcher.js');
-  let launcherData = await fs.readFile(launcherPath, 'utf8');
-
-  launcherData = launcherData.replace(
-    '// PLACEHOLDER',
-    [
-      `listener = require('./index.js');`,
-      'if (listener.default) listener = listener.default;',
-    ].join(' ')
-  );
+  const entrypoint = buildConfig.outputTo;
+  const awsLambdaHandler = getAWSLambdaHandler(entrypoint, config);
+  const makeLauncher = awsLambdaHandler ? makeAwsLauncher : makeNowLauncher;
+  const shouldAddHelpers = !(config.helpers === false || process.env.NODEJS_HELPERS === '0');
 
   const preparedFiles = {
-    'launcher.js': new FileBlob({ data: launcherData }),
-    'bridge.js': new FileFsRef({ fsPath: nodeBridge }),
     'index.js': new FileFsRef({
       fsPath: require.resolve(path.join(workPath, buildConfig.outputTo)),
     }),
   };
 
+  console.log(`Create lambda @`, entrypoint);
+  const launcherFiles = {
+    [`${LAUNCHER_FILENAME}.js`]: new FileBlob({
+      data: makeLauncher({
+        entrypointPath: `./index.js`,
+        bridgePath: `./${BRIDGE_FILENAME}`,
+        helpersPath: `./${HELPERS_FILENAME}`,
+        awsLambdaHandler,
+        shouldAddHelpers,
+      }),
+    }),
+    [`${BRIDGE_FILENAME}.js`]: new FileFsRef({ fsPath: nodeBridge }),
+  };
+
+  if (shouldAddHelpers) {
+    launcherFiles[`${HELPERS_FILENAME}.js`] = new FileFsRef({
+      fsPath: path.join(__dirname, 'node_modules', '@now', 'node', 'dist', 'helpers.js'),
+    });
+  }
+
   const lambda = await createLambda({
-    files: { ...preparedFiles },
-    handler: 'launcher.launcher',
+    files: {
+      ...launcherFiles,
+      ...preparedFiles,
+    },
+    handler: `${LAUNCHER_FILENAME}.launcher`,
     runtime: 'nodejs12.x',
   });
 
@@ -112,7 +146,7 @@ const lambdaBuilders = {
   'node-library': createLambdaForNode,
 };
 
-exports.build = async ({ files, entrypoint, workPath, meta } = {}) => {
+exports.build = async ({ files, entrypoint, workPath, config, meta } = {}) => {
   const { HOME, PATH } = process.env;
 
   const { files: downloadedFiles } = await downloadFiles({
@@ -157,7 +191,12 @@ exports.build = async ({ files, entrypoint, workPath, meta } = {}) => {
   console.log('Preparing lambdas...');
   await Promise.all(
     buildConfigs.map(async (buildConfig) =>
-      lambdaBuilders[buildConfig.target](buildConfig, lambdas, workPath)
+      lambdaBuilders[buildConfig.target]({
+        buildConfig,
+        lambdas,
+        workPath,
+        config,
+      })
     )
   );
 
