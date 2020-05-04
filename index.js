@@ -147,10 +147,14 @@ const lambdaBuilders = {
   'node-library': createLambdaForNode,
 };
 
-exports.build = async ({ files, entrypoint, workPath, config, meta } = {}) => {
+export async function build({ files, entrypoint, workPath, config, meta } = {}) {
   if (entrypoint !== 'shadow-cljs.edn') {
+    if (meta.isDev && meta.filesChanged && meta.filesChanged.includes(entrypoint)) {
+      console.log('TODO rebuild for local dev change:', entrypoint);
+      return {};
+    }
+
     // nop
-    console.log('SKIP', files, entrypoint, config, meta);
     return {};
   }
 
@@ -212,9 +216,9 @@ exports.build = async ({ files, entrypoint, workPath, config, meta } = {}) => {
   );
 
   return lambdas;
-};
+}
 
-exports.prepareCache = async ({ cachePath, workPath }) => {
+export async function prepareCache({ cachePath, workPath }) {
   console.log('Preparing cache...');
   ['.m2', '.shadow-cljs', 'node_modules'].forEach((folder) => {
     const p = path.join(workPath, folder);
@@ -232,4 +236,4 @@ exports.prepareCache = async ({ cachePath, workPath }) => {
     ...(await glob('.shadow-cljs/**', cachePath)),
     ...(await glob('node_modules/**', cachePath)),
   };
-};
+}
