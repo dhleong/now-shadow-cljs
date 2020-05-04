@@ -64,7 +64,7 @@ async function installJava({ meta }) {
 
 async function installDependencies({ files, workPath, meta }) {
   if (meta.isDev) {
-    console.log('Skip dependency install for local dev');
+    console.log('Dev mode; skipping dependency install');
     return;
   }
   const hasPkgJSON = Boolean(files['package.json']);
@@ -148,6 +148,12 @@ const lambdaBuilders = {
 };
 
 exports.build = async ({ files, entrypoint, workPath, config, meta } = {}) => {
+  if (entrypoint !== 'shadow-cljs.edn') {
+    // nop
+    console.log('SKIP', files, entrypoint, config, meta);
+    return {};
+  }
+
   const { HOME, PATH } = process.env;
 
   const { files: downloadedFiles } = await downloadFiles({
@@ -172,13 +178,17 @@ exports.build = async ({ files, entrypoint, workPath, config, meta } = {}) => {
   const buildNames = buildConfigs.map((b) => b.name);
   console.log('Detected builds:', buildNames);
 
-  try {
-    await execa('npx', ['shadow-cljs', 'release', ...buildNames], {
-      env: {
+  const env = meta.isDev
+    ? {}
+    : {
+        M2: `${workPath}.m2`,
         JAVA_HOME: `${HOME}/amazon-corretto-${javaVersion}-linux-x64`,
         PATH: `${PATH}:${HOME}/amazon-corretto-${javaVersion}-linux-x64/bin`,
-        M2: `${workPath}.m2`,
-      },
+      };
+
+  try {
+    await execa('npx', ['shadow-cljs', 'release', ...buildNames], {
+      env,
       cwd: workPath,
       stdio: 'inherit',
     });
