@@ -113,8 +113,9 @@ async function createLambdaForNode({ buildConfig, lambdas, workPath, config }) {
   };
 
   if (shouldAddHelpers) {
+    const nowIndex = require.resolve('@now/node');
     launcherFiles[`${HELPERS_FILENAME}.js`] = new FileFsRef({
-      fsPath: path.join(__dirname, 'node_modules', '@now', 'node', 'dist', 'helpers.js'),
+      fsPath: path.join(path.dirname(nowIndex), 'helpers.js'),
     });
   }
 
