@@ -66,7 +66,7 @@ async function createLambdaForNode(buildConfig, lambdas, workPath) {
     '// PLACEHOLDER',
     [
       `listener = require('./index.js');`,
-      'if (listener.default) listener = listener.default;'
+      'if (listener.default) listener = listener.default;',
     ].join(' ')
   );
 
@@ -74,14 +74,14 @@ async function createLambdaForNode(buildConfig, lambdas, workPath) {
     'launcher.js': new FileBlob({ data: launcherData }),
     'bridge.js': new FileFsRef({ fsPath: nodeBridge }),
     'index.js': new FileFsRef({
-      fsPath: require.resolve(path.join(workPath, buildConfig.outputTo))
-    })
+      fsPath: require.resolve(path.join(workPath, buildConfig.outputTo)),
+    }),
   };
 
   const lambda = await createLambda({
     files: { ...preparedFiles },
     handler: 'launcher.launcher',
-    runtime: 'nodejs12.x'
+    runtime: 'nodejs12.x',
   });
 
   lambdas[buildConfig.outputTo] = lambda;
@@ -100,7 +100,7 @@ async function createLambdaForStatic(buildConfig, lambdas, workPath) {
 
 const lambdaBuilders = {
   browser: createLambdaForStatic,
-  'node-library': createLambdaForNode
+  'node-library': createLambdaForNode,
 };
 
 exports.build = async ({ files, entrypoint, workPath } = {}) => {
@@ -110,7 +110,7 @@ exports.build = async ({ files, entrypoint, workPath } = {}) => {
 
   const { stdout } = await execa('ls', ['-a'], {
     cwd: workPath,
-    stdio: 'inherit'
+    stdio: 'inherit',
   });
 
   console.log(stdout);
@@ -122,14 +122,14 @@ exports.build = async ({ files, entrypoint, workPath } = {}) => {
   const buildConfigs = await parseConfigFile(input);
 
   try {
-    await execa('npx', ['shadow-cljs', 'release', ...buildConfigs.map(b => b.name)], {
+    await execa('npx', ['shadow-cljs', 'release', ...buildConfigs.map((b) => b.name)], {
       env: {
         JAVA_HOME: `${HOME}/amazon-corretto-${javaVersion}-linux-x64`,
         PATH: `${PATH}:${HOME}/amazon-corretto-${javaVersion}-linux-x64/bin`,
-        M2: `${workPath}.m2`
+        M2: `${workPath}.m2`,
       },
       cwd: workPath,
-      stdio: 'inherit'
+      stdio: 'inherit',
     });
   } catch (err) {
     console.error('Failed to `npx shadow-cljs release ...`');
@@ -139,7 +139,7 @@ exports.build = async ({ files, entrypoint, workPath } = {}) => {
   const lambdas = {};
 
   await Promise.all(
-    buildConfigs.map(async buildConfig =>
+    buildConfigs.map(async (buildConfig) =>
       lambdaBuilders[buildConfig.target](buildConfig, lambdas, workPath)
     )
   );
@@ -149,7 +149,7 @@ exports.build = async ({ files, entrypoint, workPath } = {}) => {
 
 exports.prepareCache = async ({ cachePath, workPath }) => {
   console.log('Preparing cache...');
-  ['.m2', '.shadow-cljs', 'node_modules'].forEach(folder => {
+  ['.m2', '.shadow-cljs', 'node_modules'].forEach((folder) => {
     const p = path.join(workPath, folder);
     const cp = path.join(cachePath, folder);
 
@@ -163,6 +163,6 @@ exports.prepareCache = async ({ cachePath, workPath }) => {
   return {
     ...(await glob('.m2/**', cachePath)),
     ...(await glob('.shadow-cljs/**', cachePath)),
-    ...(await glob('node_modules/**', cachePath))
+    ...(await glob('node_modules/**', cachePath)),
   };
 };
