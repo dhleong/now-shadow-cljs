@@ -1,9 +1,11 @@
-/* eslint-disable no-console */
+const debug = require('debug')('shadow:parse');
 
 const fs = require('fs-extra');
 const edn = require('jsedn');
 
 const supportedBuildTypes = [':browser', ':node-library'];
+
+debug.enabled = true;
 
 // Handle/ignore shadow/env tagged value
 edn.setTagAction(new edn.Tag('shadow', 'env'), (obj) => {
@@ -15,7 +17,7 @@ function keywordToString(kw) {
 }
 
 async function parseAndFilterShadowCljsBuilds(input) {
-  console.log('Reading shadow-cljs config...');
+  debug('Reading shadow-cljs config...');
   const entrypointFile = await fs.readFile(input, 'utf8');
 
   // Parse edn to js
