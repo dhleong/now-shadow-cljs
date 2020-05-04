@@ -1,11 +1,11 @@
 {
-  "name": "@jntn/now-shadow-cljs",
+  "name": "@dhleong/now-shadow-cljs",
   "version": "1.0.0",
   "license": "MIT",
   "description": "A now builder for ClojureScript projects using shadow-cljs",
   "repository": {
     "type": "git",
-    "url": "https://github.com/jntn/now-shadow-cljs.git"
+    "url": "https://github.com/dhleong/now-shadow-cljs.git"
   },
   "files": [
     "index.js",
