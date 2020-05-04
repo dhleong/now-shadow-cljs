@@ -21,7 +21,12 @@ const parseConfigFile = require('./parse-config-file');
 const javaVersion = '8.242.07.1';
 const javaUrl = `https://corretto.aws/downloads/resources/${javaVersion}/amazon-corretto-${javaVersion}-linux-x64.tar.gz`;
 
-async function installJava() {
+async function installJava({ meta }) {
+  if (meta.isDev) {
+    console.log('Dev mode; skipping java install');
+    return Promise.resolve();
+  }
+
   console.log('Downloading java...');
   const res = await fetch(javaUrl);
 
@@ -38,7 +43,11 @@ async function installJava() {
   });
 }
 
-async function installDependencies(files, workPath) {
+async function installDependencies({ files, workPath, meta }) {
+  if (meta.isDev) {
+    console.log('Skip dependency install for local dev');
+    return;
+  }
   const hasPkgJSON = Boolean(files['package.json']);
   if (hasPkgJSON) {
     console.log('Installing dependencies...');
@@ -48,9 +57,9 @@ async function installDependencies(files, workPath) {
   }
 }
 
-async function downloadFiles(files, entrypoint, workPath) {
+async function downloadFiles({ files, entrypoint, workPath, meta }) {
   console.log('Downloading files...');
-  const downloadedFiles = await download(files, workPath);
+  const downloadedFiles = await download(files, workPath, meta);
   const entryPath = downloadedFiles[entrypoint].fsPath;
 
   return { files: downloadedFiles, entryPath };
@@ -103,10 +112,15 @@ const lambdaBuilders = {
   'node-library': createLambdaForNode,
 };
 
-exports.build = async ({ files, entrypoint, workPath } = {}) => {
+exports.build = async ({ files, entrypoint, workPath, meta } = {}) => {
   const { HOME, PATH } = process.env;
 
-  const { files: downloadedFiles } = await downloadFiles(files, entrypoint, workPath);
+  const { files: downloadedFiles } = await downloadFiles({
+    entrypoint,
+    files,
+    meta,
+    workPath,
+  });
 
   const { stdout } = await execa('ls', ['-a'], {
     cwd: workPath,
@@ -115,14 +129,16 @@ exports.build = async ({ files, entrypoint, workPath } = {}) => {
 
   console.log(stdout);
 
-  await installJava();
-  await installDependencies(downloadedFiles, workPath);
+  await installJava({ meta });
+  await installDependencies({ files: downloadedFiles, workPath, meta });
 
   const input = downloadedFiles[entrypoint].fsPath;
   const buildConfigs = await parseConfigFile(input);
+  const buildNames = buildConfigs.map((b) => b.name);
+  console.log('Detected builds:', buildNames);
 
   try {
-    await execa('npx', ['shadow-cljs', 'release', ...buildConfigs.map((b) => b.name)], {
+    await execa('npx', ['shadow-cljs', 'release', ...buildNames], {
       env: {
         JAVA_HOME: `${HOME}/amazon-corretto-${javaVersion}-linux-x64`,
         PATH: `${PATH}:${HOME}/amazon-corretto-${javaVersion}-linux-x64/bin`,
@@ -138,6 +154,7 @@ exports.build = async ({ files, entrypoint, workPath } = {}) => {
 
   const lambdas = {};
 
+  console.log('Preparing lambdas...');
   await Promise.all(
     buildConfigs.map(async (buildConfig) =>
       lambdaBuilders[buildConfig.target](buildConfig, lambdas, workPath)
