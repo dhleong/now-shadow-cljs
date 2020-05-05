@@ -5,6 +5,8 @@
                 [binaryage/devtools "0.9.10"]
                 [cljs-http "0.1.45"]]
 
+ :now {:dev {:compile "release"}}
+
  :builds {:haikus {:target :node-library
                    :output-to "api/haikus/index.js"
                    :output-dir "api/haikus"

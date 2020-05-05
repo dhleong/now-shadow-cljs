@@ -37,6 +37,25 @@ function prepareOptions(rawOptions) {
   return options;
 }
 
+function parseBuildConfigs(rawBuildConfigs) {
+  if (!rawBuildConfigs) {
+    return [];
+  }
+
+  // Filter builds that are supported by this builder
+  const supportedBuildConfigs = Object.entries(rawBuildConfigs).filter(([, config]) =>
+    supportedBuildTypes.includes(config[':target'])
+  );
+
+  return supportedBuildConfigs.map(([name, config]) => ({
+    name: keywordToString(name),
+    target: keywordToString(config[':target']),
+    assetPath: config[':asset-path'],
+    outputDir: config[':output-dir'],
+    outputTo: config[':output-to'],
+  }));
+}
+
 async function parseAndFilterShadowCljsBuilds(input) {
   debug('Reading shadow-cljs config...');
   const entrypointFile = await fs.readFile(input, 'utf8');
@@ -44,21 +63,8 @@ async function parseAndFilterShadowCljsBuilds(input) {
   // Parse edn to js
   const shadowCljsConfig = edn.toJS(edn.parse(entrypointFile));
 
-  // Filter builds that are supported by this builder
-  const supportedBuildConfigs = Object.entries(shadowCljsConfig[':builds']).filter(([, config]) =>
-    supportedBuildTypes.includes(config[':target'])
-  );
-
-  const buildConfigs = supportedBuildConfigs.map(([name, config]) => ({
-    name: keywordToString(name),
-    target: keywordToString(config[':target']),
-    assetPath: config[':asset-path'],
-    outputDir: config[':output-dir'],
-    outputTo: config[':output-to'],
-  }));
-
-  const rawOptions = shadowCljsConfig[':now'];
-  const options = prepareOptions(rawOptions);
+  const buildConfigs = parseBuildConfigs(shadowCljsConfig[':builds']);
+  const options = prepareOptions(shadowCljsConfig[':now']);
 
   return {
     buildConfigs,
