@@ -135,7 +135,7 @@ async function createLambdaForNode({ buildConfig, lambdas, workPath, config }) {
   lambdas[buildConfig.outputTo] = lambda;
 }
 
-async function createLambdaForStatic(buildConfig, lambdas, workPath) {
+async function createLambdaForStatic({ buildConfig, lambdas, workPath }) {
   debug(`Creating lambda for ${buildConfig.name} (${buildConfig.target})`);
 
   // Try to compute folder to serve.
