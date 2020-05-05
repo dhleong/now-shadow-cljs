@@ -23,6 +23,7 @@ const parseConfigFile = require('./parse-config-file');
 const LAUNCHER_FILENAME = '___now_launcher';
 const BRIDGE_FILENAME = '___now_bridge';
 const HELPERS_FILENAME = '___now_helpers';
+const SOURCEMAP_SUPPORT_FILENAME = '__sourcemap_support';
 
 const javaVersion = '8.242.07.1';
 const javaUrl = `https://corretto.aws/downloads/resources/${javaVersion}/amazon-corretto-${javaVersion}-linux-x64.tar.gz`;
@@ -88,18 +89,44 @@ async function downloadFiles({ files, entrypoint, workPath, meta }) {
   return { files: downloadedFiles, entryPath };
 }
 
-async function createLambdaForNode({ buildConfig, lambdas, workPath, config }) {
+async function cleanSourceForDevMode(sourceFilePath) {
+  let source = (await fs.readFile(sourceFilePath)).toString();
+
+  // NOTE: in dev mode, shadow-cljs requires and calls install() in source-map-support.
+  // The version of source-map-support that now bundles already calls install()
+  // just by requiring it
+
+  source = source.replace(
+    `require('source-map-support').install()`,
+    `require('./${SOURCEMAP_SUPPORT_FILENAME}')`
+  );
+
+  // Also, __dirname exists but does not point to the build directory, so
+  // let's remove the if() that sets an absolute path for imports
+
+  source = source.replace(`if (__dirname == '.')`, `if (__dirname != '.')`);
+
+  return source;
+}
+
+async function createLambdaForNode({ buildConfig, buildMode, lambdas, workPath, config }) {
   debug(`Creating lambda for ${buildConfig.name} (${buildConfig.target})`);
 
   const entrypoint = buildConfig.outputTo;
   const awsLambdaHandler = getAWSLambdaHandler(entrypoint, config);
   const makeLauncher = awsLambdaHandler ? makeAwsLauncher : makeNowLauncher;
   const shouldAddHelpers = !(config.helpers === false || process.env.NODEJS_HELPERS === '0');
+  const shouldAddSourcemapSupport = buildMode !== 'release';
 
+  const sourceFilePath = require.resolve(path.join(workPath, buildConfig.outputTo));
   const preparedFiles = {
-    'index.js': new FileFsRef({
-      fsPath: require.resolve(path.join(workPath, buildConfig.outputTo)),
-    }),
+    'index.js': shouldAddSourcemapSupport
+      ? new FileBlob({
+          data: await cleanSourceForDevMode(sourceFilePath),
+        })
+      : new FileFsRef({
+          fsPath: sourceFilePath,
+        }),
   };
 
   debug(`Create lambda @`, entrypoint);
@@ -109,17 +136,24 @@ async function createLambdaForNode({ buildConfig, lambdas, workPath, config }) {
         entrypointPath: `./index.js`,
         bridgePath: `./${BRIDGE_FILENAME}`,
         helpersPath: `./${HELPERS_FILENAME}`,
+        sourcemapSupportPath: `./${SOURCEMAP_SUPPORT_FILENAME}`,
         awsLambdaHandler,
         shouldAddHelpers,
+        shouldAddSourcemapSupport,
       }),
     }),
     [`${BRIDGE_FILENAME}.js`]: new FileFsRef({ fsPath: nodeBridge }),
   };
 
   if (shouldAddHelpers) {
-    const nowIndex = require.resolve('@now/node');
     launcherFiles[`${HELPERS_FILENAME}.js`] = new FileFsRef({
-      fsPath: path.join(path.dirname(nowIndex), 'helpers.js'),
+      fsPath: require.resolve('@now/node/dist/helpers'),
+    });
+  }
+
+  if (shouldAddSourcemapSupport) {
+    launcherFiles[`${SOURCEMAP_SUPPORT_FILENAME}.js`] = new FileFsRef({
+      fsPath: require.resolve('@now/node/dist/source-map-support'),
     });
   }
 
@@ -191,9 +225,11 @@ async function compileBuilds({ buildConfigs, workPath, config, options, meta }) 
     buildConfigs.map(async (buildConfig) =>
       lambdaBuilders[buildConfig.target]({
         buildConfig,
+        buildMode,
         lambdas,
         workPath,
         config,
+        meta,
       })
     )
   );
@@ -232,7 +268,9 @@ async function build({ files, entrypoint, workPath, config, meta } = {}) {
     watch: Object.keys(files).filter((file) => {
       return file.endsWith('shadow-cljs.edn') || file.match(/\.clj[sc]?/);
     }),
-    routes: [], // TODO we should be able to determine from buidlConfigs
+
+    // NOTE we should be able to determine this from buildConfigs, but
+    routes: [],
   };
 }
 
