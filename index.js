@@ -151,7 +151,7 @@ const lambdaBuilders = {
   'node-library': createLambdaForNode,
 };
 
-async function compileBuilds({ buildConfigs, workPath, config, meta }) {
+async function compileBuilds({ buildConfigs, workPath, config, options, meta }) {
   const { HOME, PATH } = process.env;
 
   const buildNames = buildConfigs.map((b) => b.name);
@@ -165,7 +165,7 @@ async function compileBuilds({ buildConfigs, workPath, config, meta }) {
         PATH: `${PATH}:${HOME}/amazon-corretto-${javaVersion}-linux-x64/bin`,
       };
 
-  const buildMode = meta.isDev ? 'compile' : 'release';
+  const buildMode = meta.isDev ? options.dev.compile : 'release';
   const invocation = ['shadow-cljs', buildMode, ...buildNames];
 
   try {
@@ -222,8 +222,8 @@ async function build({ files, entrypoint, workPath, config, meta } = {}) {
   await installDependencies({ files: downloadedFiles, workPath, meta });
 
   const input = downloadedFiles[entrypoint].fsPath;
-  const buildConfigs = await parseConfigFile(input);
-  const lambdas = await compileBuilds({ buildConfigs, workPath, config, meta });
+  const { buildConfigs, options } = await parseConfigFile(input);
+  const lambdas = await compileBuilds({ buildConfigs, workPath, config, options, meta });
 
   debug('Build completed.');
 

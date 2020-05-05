@@ -16,6 +16,27 @@ function keywordToString(kw) {
   return kw && kw.replace(':', '');
 }
 
+function prepareOptions(rawOptions) {
+  const options = {
+    dev: {
+      compile: 'compile',
+    },
+  };
+
+  if (!rawOptions) {
+    return options;
+  }
+
+  if (rawOptions[':dev']) {
+    const dev = rawOptions[':dev'];
+    if (dev[':compile']) {
+      options.dev.compile = dev[':compile'];
+    }
+  }
+
+  return options;
+}
+
 async function parseAndFilterShadowCljsBuilds(input) {
   debug('Reading shadow-cljs config...');
   const entrypointFile = await fs.readFile(input, 'utf8');
@@ -28,13 +49,21 @@ async function parseAndFilterShadowCljsBuilds(input) {
     supportedBuildTypes.includes(config[':target'])
   );
 
-  return supportedBuildConfigs.map(([name, config]) => ({
+  const buildConfigs = supportedBuildConfigs.map(([name, config]) => ({
     name: keywordToString(name),
     target: keywordToString(config[':target']),
     assetPath: config[':asset-path'],
     outputDir: config[':output-dir'],
     outputTo: config[':output-to'],
   }));
+
+  const rawOptions = shadowCljsConfig[':now'];
+  const options = prepareOptions(rawOptions);
+
+  return {
+    buildConfigs,
+    options,
+  };
 }
 
 module.exports = parseAndFilterShadowCljsBuilds;
