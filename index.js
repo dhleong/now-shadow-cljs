@@ -151,18 +151,65 @@ const lambdaBuilders = {
   'node-library': createLambdaForNode,
 };
 
-async function build({ files, entrypoint, workPath, config, meta } = {}) {
-  if (entrypoint !== 'shadow-cljs.edn') {
-    if (meta.isDev && meta.filesChanged && meta.filesChanged.includes(entrypoint)) {
-      debug('TODO rebuild for local dev change:', entrypoint);
-      return {};
-    }
+async function compileBuilds({ buildConfigs, workPath, config, meta }) {
+  const { HOME, PATH } = process.env;
 
-    // nop
-    return {};
+  const buildNames = buildConfigs.map((b) => b.name);
+  debug('Detected builds:', buildNames);
+
+  const env = meta.isDev
+    ? {}
+    : {
+        M2: `${workPath}.m2`,
+        JAVA_HOME: `${HOME}/amazon-corretto-${javaVersion}-linux-x64`,
+        PATH: `${PATH}:${HOME}/amazon-corretto-${javaVersion}-linux-x64/bin`,
+      };
+
+  const buildMode = meta.isDev ? 'compile' : 'release';
+  const invocation = ['shadow-cljs', buildMode, ...buildNames];
+
+  try {
+    debug(`Exec: '${invocation.join(' ')}':`);
+
+    // eslint-disable-next-line no-console
+    console.log();
+
+    await execa('npx', invocation, {
+      env,
+      cwd: workPath,
+      stdio: 'inherit',
+    });
+  } catch (err) {
+    debug(`Failed to 'npx shadow-cljs ${buildMode} ...'`);
+    throw err;
   }
 
-  const { HOME, PATH } = process.env;
+  debug('Finished compile; preparing lambdas...');
+  const lambdas = {};
+
+  await Promise.all(
+    buildConfigs.map(async (buildConfig) =>
+      lambdaBuilders[buildConfig.target]({
+        buildConfig,
+        lambdas,
+        workPath,
+        config,
+      })
+    )
+  );
+
+  return lambdas;
+}
+
+async function build({ files, entrypoint, workPath, config, meta } = {}) {
+  debug('Build requested. Changed Files: ', meta.filesChanged);
+
+  if (entrypoint !== 'shadow-cljs.edn') {
+    // nop; we return all the files to watch (IE: all of them) and that should
+    // trigger a build with the shadow-cljs.edn as the entrypoint, which we
+    // currently depend on to extract builds.
+    return {};
+  }
 
   const { files: downloadedFiles } = await downloadFiles({
     entrypoint,
@@ -176,48 +223,17 @@ async function build({ files, entrypoint, workPath, config, meta } = {}) {
 
   const input = downloadedFiles[entrypoint].fsPath;
   const buildConfigs = await parseConfigFile(input);
-  const buildNames = buildConfigs.map((b) => b.name);
-  debug('Detected builds:', buildNames);
+  const lambdas = await compileBuilds({ buildConfigs, workPath, config, meta });
 
-  const env = meta.isDev
-    ? {}
-    : {
-        M2: `${workPath}.m2`,
-        JAVA_HOME: `${HOME}/amazon-corretto-${javaVersion}-linux-x64`,
-        PATH: `${PATH}:${HOME}/amazon-corretto-${javaVersion}-linux-x64/bin`,
-      };
+  debug('Build completed.');
 
-  try {
-    debug('Exec: `shadow-cljs release', buildNames.join(' '), '`:');
-
-    // eslint-disable-next-line no-console
-    console.log();
-
-    await execa('npx', ['shadow-cljs', 'release', ...buildNames], {
-      env,
-      cwd: workPath,
-      stdio: 'inherit',
-    });
-  } catch (err) {
-    debug('Failed to `npx shadow-cljs release ...`');
-    throw err;
-  }
-
-  const lambdas = {};
-
-  debug('Preparing lambdas...');
-  await Promise.all(
-    buildConfigs.map(async (buildConfig) =>
-      lambdaBuilders[buildConfig.target]({
-        buildConfig,
-        lambdas,
-        workPath,
-        config,
-      })
-    )
-  );
-
-  return lambdas;
+  return {
+    output: lambdas,
+    watch: Object.keys(files).filter((file) => {
+      return file.endsWith('shadow-cljs.edn') || file.match(/\.clj[sc]?/);
+    }),
+    routes: [], // TODO we should be able to determine from buidlConfigs
+  };
 }
 
 async function prepareCache({ cachePath, workPath }) {
@@ -243,4 +259,6 @@ async function prepareCache({ cachePath, workPath }) {
 module.exports = {
   build,
   prepareCache,
+
+  version: 2,
 };
