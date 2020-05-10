@@ -186,6 +186,7 @@ const lambdaBuilders = {
 };
 
 let hasStartedServer = false;
+
 async function ensureServerStarted({ workPath }) {
   if (hasStartedServer) return;
 
