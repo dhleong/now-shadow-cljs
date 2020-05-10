@@ -185,11 +185,42 @@ const lambdaBuilders = {
   'node-library': createLambdaForNode,
 };
 
+let hasStartedServer = false;
+async function ensureServerStarted({ workPath }) {
+  if (hasStartedServer) return;
+
+  debug('Ensuring build server is running...');
+  const serverProc = execa('npx', ['shadow-cljs', 'server'], {
+    all: true,
+    cwd: workPath,
+  });
+
+  // wait for the server to start (or to detect it's already running)
+  await new Promise((resolve) => {
+    serverProc.all.on('data', (data) => {
+      const out = data.toString();
+      if (out.includes('already running')) {
+        debug('Build server detected.');
+        resolve();
+      } else if (out.includes(' running at')) {
+        debug('Started build server.');
+        resolve();
+      }
+    });
+  });
+
+  hasStartedServer = true;
+}
+
 async function compileBuilds({ buildConfigs, workPath, config, options, meta }) {
   const { HOME, PATH } = process.env;
 
   const buildNames = buildConfigs.map((b) => b.name);
   debug('Detected builds:', buildNames);
+
+  if (meta.isDev && options.dev.server) {
+    await ensureServerStarted({ workPath });
+  }
 
   const env = meta.isDev
     ? {}

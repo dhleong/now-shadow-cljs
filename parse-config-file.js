@@ -20,6 +20,7 @@ function prepareOptions(rawOptions) {
   const options = {
     dev: {
       compile: 'compile',
+      server: true,
     },
   };
 
@@ -31,6 +32,9 @@ function prepareOptions(rawOptions) {
     const dev = rawOptions[':dev'];
     if (dev[':compile']) {
       options.dev.compile = dev[':compile'];
+    }
+    if (dev[':server'] === false) {
+      options.dev.server = false;
     }
   }
 
